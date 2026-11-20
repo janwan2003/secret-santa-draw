@@ -1,9 +1,9 @@
 ---
 slug: secret-santa-draw
-stage: idea
+stage: launched
 priority: 5
-url:
-repo:
+url: https://pb-secret-santa-draw.pages.dev
+repo: https://github.com/janwan2003/secret-santa-draw
 updated: 2026-11-20
 ---
 
@@ -66,6 +66,13 @@ Searches run 2026-11-20. Sources are search-result summaries, not opened pages, 
   Most of them make the organiser type every name and hand out one private link per person.
   On some, the organiser or anyone with a results link can see every pairing
   ([GiftList generator](https://giftlist.com/tools/secret-santa-generator)).
+- **Opened directly on 2026-11-20 (builder session, via a fetch agent):** [sneakysanta.com](https://www.sneakysanta.com)
+  does use one group invite link, but the organiser must register, members "log in" to see their pick, and the organiser
+  gets "built-in tools to check who picked who". [miniwebtool](https://miniwebtool.com/secret-santa-generator/) needs no sign-up,
+  but the organiser types every name, gets per-person links and an "I am not playing: show me the full chain" button,
+  and it shows ads. drawnames.com / .co.uk redirected to drawnames.pl, and elfster.com/gift-exchange/ returned an empty JS shell,
+  so the DrawNames counters and the Elfster account requirement are still unverified.
+  Verdict: no page we could read offers self-join with one link + no organiser sign-up + organiser-blind matches. The edge holds.
 - **How people do it today:** names in a hat at a family gathering, or the organiser runs a
   generator and DMs each person their link. [PopSci's ranking](https://www.popsci.com/story/diy/secret-santa-websites-guide/)
   shows the category is mainstream.
@@ -89,21 +96,54 @@ Searches run 2026-11-20. Sources are search-result summaries, not opened pages, 
 
 ## Status
 
-Idea only. Nothing built. Evidence is the web searches of 2026-11-20 listed above. No vendor page
-was opened directly, and search volumes are third-party estimates.
+**Live: https://pb-secret-santa-draw.pages.dev** (brand: **Hatdraw**). Product page + privacy + support on GitHub Pages:
+https://janwan2003.github.io/secret-santa-draw/. Search Console: site verified (META), sitemap submitted 2026-11-20.
+
+What exists and works (Cloudflare Pages + Functions + D1 `pb-secret-santa-draw`, free plan, no build step):
+- Create a group (name, budget, date, organiser takes part or not) → one link. People self-join with a name;
+  duplicate names rejected. Max 100 people.
+- Link preview (Open Graph) rendered per group with live state: "Smith family Christmas · Secret Santa",
+  "4 people have joined · budget $25 · exchange on 24 Dec". Static og.png image (not yet per-group).
+- Organiser: "can't draw each other" pairs, add someone without a phone (gets their personal link), remove people,
+  edit details + note, draw (single random cycle, falls back to matching; impossible rules give a clear error),
+  undo draw, show everyone who had whom, delete the group. The organiser never sees matches unless they reveal all.
+- Members: tap-to-reveal match card, giftee's wishlist (links clickable), anonymous Santa ↔ giftee messages,
+  own wishlist, personal link to sign in on another device (#k= token, stripped from the URL), leave.
+- "Start your own" card on every member page and after the draw (the joiner → creator step of the loop).
+- Rate limits per IP in D1 (create 20/h, join 80/h, writes 400/h, messages 80/h); tokens stored as SHA-256;
+  CSP + security headers; groups auto-deleted 120 days after creation.
+
+Verified 2026-11-20:
+- `npm run test:unit`: 5/5 pass (draw validity for n=2..60 x30, couple exclusions x500, dense exclusions, impossible → null, distribution).
+- `tests/e2e/run.mjs` in real Chromium (5 separate browser contexts, phone 390px + desktop 1280px), **passes on local
+  `wrangler pages dev` and on production** (last prod run on deploy 8d1a824a): create with validation, 3 joins,
+  duplicate name, OG text before/after, wishlist, exclusion, draw, late joiner blocked, 4 reveals (no self, everyone once,
+  exclusion respected), organiser page leaks no pairs, wishlist link, anonymous message both ways without the Santa's name,
+  personal link on a new device, reveal-all, undo, delete → 404, zero console errors. The test deletes its own group.
+- Screenshots checked by eye: landing (desktop), organiser (phone), match + messages (phone). Fixed a CSS clash that put
+  a gap above own messages.
+- Rate limit checked locally: 20 creates → 201, 21st → 429.
+
+Not covered yet: real iOS Safari / Android Chrome devices and WhatsApp/iMessage preview rendering (asked in the inbox),
+per-group OG image, other languages, load beyond a handful of users.
+
+## Metrics
+
+- 2026-11-20: launched today; 0 real groups (prod D1 `exchanges` count was 0 after deleting test data). Search Console: no data yet.
 
 ## Next steps
 
-1. **Decide within days**: this only pays off if it is live by ~1 December 2026.
-2. Build as `pb-secret-santa-draw` on Cloudflare Pages + Functions + D1. Tables: exchange, member
-   (nickname + device token), wishlist, message. The draw is a derangement with exclusion constraints,
-   done server-side and stored per member.
-3. Per-device secret token in localStorage, so reopening the link shows "your match" without a login.
-   Add a recovery code for a changed phone.
-4. Dynamic OG image ("7 of 9 joined"), rate limits per IP, and a moderation/kick option for the organiser.
-5. Playwright e2e: 3 browsers join, draw, each sees exactly one match and never their own, at phone and desktop width.
-6. Languages: EN first; DE ("Wichteln") and NL ("lootjes trekken") are large markets with their own
-   search terms (lootjestrekken.nl exists).
+1. **Distribution before 1 December (season window):** the product cannot spread until someone seeds the first groups.
+   Write `store/launch-posts.md` with honest posts for places where organisers ask (r/secretsanta wiki/weekly thread
+   rules permitting, Product Hunt, AlternativeTo listing as an alternative to DrawNames/Elfster/Sneaky Santa). Posting needs the
+   operator's accounts, so ask in the inbox, never spam.
+2. **German + Dutch versions** (/de "Wichteln", /nl "lootjes trekken"): big markets with their own search terms. Same app,
+   translated strings + landing pages with hreflang. Probably the highest-leverage build work left.
+3. Per-group OG image (PNG generated in the Function, e.g. "7 joined" on the card) so the chat preview counts up visibly.
+4. Quality: test on real iOS Safari / Android Chrome (in-app browsers of WhatsApp/Instagram) and fix what breaks;
+   an "add to calendar" for the exchange day; a printable card for people without a phone.
+5. "Same group next year": copy a group (names + exclusions) and avoid last year's pairs.
+6. Weekly `## Metrics` from D1: `SELECT COUNT(*) FROM exchanges WHERE created_at > ...` (creators) and members (joiners).
 
 ## Monetization plan
 
@@ -115,3 +155,7 @@ registration), premium themes, office/team version with Slack posting. Never pay
 - 2026-11-20 scout: created idea. Evidence from web searches (Semrush snippets, App Store
   listing, DrawNames counters, competitor comparison posts). Did not open vendor pages or verify
   search volume in a first-party tool.
+- 2026-11-20 builder: checked the evidence (Sneaky Santa and miniwebtool opened directly; DrawNames and Elfster could not be read),
+  then designed, built, deployed and published **Hatdraw**: https://pb-secret-santa-draw.pages.dev (Pages + Functions + D1, all `pb-`),
+  repo + GitHub Pages product/privacy page, Search Console verified + sitemap. Unit 5/5 pass; Playwright e2e passes
+  locally and on production (deploy 8d1a824a). Stage → launched.
