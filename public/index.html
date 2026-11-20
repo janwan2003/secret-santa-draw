@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Santa Generator: one link for the group chat · Hatdraw</title>
+<meta name="description" content="Free Secret Santa draw. Send one link to your group chat, everyone joins with their name, and each person sees only who they got. No sign-up, no emails, no ads. The organiser can play too.">
+<link rel="canonical" href="https://pb-secret-santa-draw.pages.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hatdraw">
+<meta property="og:title" content="Hatdraw: Secret Santa in your group chat">
+<meta property="og:description" content="One link. Everyone joins with their name. Each person sees only who they got. No sign-up.">
+<meta property="og:url" content="https://pb-secret-santa-draw.pages.dev/">
+<meta property="og:image" content="https://pb-secret-santa-draw.pages.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="google-site-verification" content="g6R95T8-VFARk0PYhc-lkqete3o5OcxzkrFJ0B-vI4E" />
+<meta name="theme-color" content="#c42a3c">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"Hatdraw","url":"https://pb-secret-santa-draw.pages.dev/","applicationCategory":"LifestyleApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Free Secret Santa draw with one group link. No sign-up."}
+</script>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/"><img src="/icon.svg" alt="" width="34" height="34">Hatdraw</a>
+  <nav><a class="hide-sm" href="#how">How it works</a><a class="hide-sm" href="#faq">FAQ</a><a href="#start">Start a draw</a></nav>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap hero-grid">
+  <div>
+    <span class="badge">Free · No sign-up · No ads</span>
+    <h1>Secret Santa in your group chat.</h1>
+    <p class="lead">Make one link and drop it in WhatsApp, iMessage or Slack. Everyone joins with their name. When you draw, each person sees only who they got, on their own phone.</p>
+    <ul class="ticks">
+      <li>One link for everyone, not one message per person</li>
+      <li>No emails, phone numbers or accounts</li>
+      <li>The organiser can't see the matches, so you can play too</li>
+      <li>Wishlists, and anonymous questions to your giftee</li>
+      <li>Couples won't draw each other</li>
+    </ul>
+    <div id="mine" class="my-groups hide"><h3>Your exchanges on this device</h3><div id="mineList"></div></div>
+  </div>
+  <div id="start">
+    <form id="createForm" class="card create-card" novalidate>
+      <h2>Start a Secret Santa</h2>
+      <div class="field">
+        <label for="exName">Group name</label>
+        <input id="exName" type="text" maxlength="60" placeholder="e.g. Smith family Christmas" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="orgName">Your name</label>
+        <input id="orgName" type="text" maxlength="40" placeholder="e.g. Anna" autocomplete="given-name" required>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="budget">Budget <span class="muted small">(optional)</span></label>
+          <input id="budget" type="text" maxlength="30" placeholder="e.g. $25">
+        </div>
+        <div class="field">
+          <label for="date">Exchange day <span class="muted small">(optional)</span></label>
+          <input id="date" type="date">
+        </div>
+      </div>
+      <div class="field">
+        <label class="check"><input id="participates" type="checkbox" checked> I'm taking part in the draw too</label>
+      </div>
+      <div id="createError" class="error" role="alert"></div>
+      <button class="btn block" type="submit" id="createBtn">Create the group link</button>
+      <p class="hint center">Free. Takes 20 seconds. Nothing to install.</p>
+    </form>
+  </div>
+</div></section>
+
+<section class="block" id="how"><div class="wrap">
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step"><div class="num">1</div><h3>Make the link</h3><p class="muted">Name your group, set a budget and a date. You get one link.</p></div>
+    <div class="step"><div class="num">2</div><h3>Share it in the chat</h3><p class="muted">Everyone taps it and types their name. Add a wishlist if you like. The link preview shows how many have joined.</p></div>
+    <div class="step"><div class="num">3</div><h3>Draw names</h3><p class="muted">When everyone's in, the organiser taps Draw. Each person opens the same link and sees only their own match.</p></div>
+  </div>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <h2>Why a group link?</h2>
+  <p class="lead">Most Secret Santa generators make the organiser type in everyone's name, email or phone number and then send each person a separate link. With Hatdraw people add themselves.</p>
+  <table class="compare">
+    <tr><th></th><th>Hatdraw</th><th>Typical generator</th></tr>
+    <tr><td>Invite everyone</td><td class="yes">One link in the group chat</td><td>Enter each email or send each link</td></tr>
+    <tr><td>Accounts</td><td class="yes">None</td><td>Often needed for wishlists</td></tr>
+    <tr><td>Organiser sees the matches</td><td class="yes">No, so they can play</td><td>Often yes</td></tr>
+    <tr><td>Ads</td><td class="yes">None</td><td>Often</td></tr>
+  </table>
+</div></section>
+
+<section class="block faq" id="faq"><div class="wrap">
+  <h2>Questions</h2>
+  <details><summary>Is it really free?</summary><p>Yes. No sign-up, no ads, no paid plan.</p></details>
+  <details><summary>How does each person see only their own match?</summary><p>When you join, your phone keeps a private key for you. After the draw, the group link shows you only your own match. Nobody else's phone can see it, including the organiser's.</p></details>
+  <details><summary>Someone changed phones or cleared their browser. What now?</summary><p>After joining, everyone can copy their personal link. Opening it on any device signs them back in. If it's lost, the organiser can undo the draw, remove and re-add that person, and draw again.</p></details>
+  <details><summary>Can I stop couples drawing each other?</summary><p>Yes. The organiser can mark any two people as "can't draw each other" before the draw.</p></details>
+  <details><summary>Someone in the family doesn't use a phone.</summary><p>The organiser can add them by name and gets a personal link for them to print or pass on.</p></details>
+  <details><summary>What if someone joins late?</summary><p>The organiser can undo the draw, and everyone draws again with the new person included.</p></details>
+  <details><summary>Can we see who had whom at the end?</summary><p>Yes. On exchange day the organiser can show all the pairs to the group. That's optional.</p></details>
+  <details><summary>What do you keep about me?</summary><p>Only what you type: the group name, people's first names, wishlists and messages. They are deleted automatically 120 days after the group was made. See the <a href="/privacy">privacy policy</a>.</p></details>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <span>Hatdraw: free Secret Santa draws for families, friends and offices.</span>
+  <span><a href="/privacy">Privacy</a> · <a href="https://github.com/janwan2003/secret-santa-draw/issues">Support</a></span>
+</div></footer>
+<script src="/common.js"></script>
+<script src="/home.js"></script>
+</body>
+</html>

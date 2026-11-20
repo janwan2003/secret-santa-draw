@@ -1,0 +1,8 @@
+name = "pb-secret-santa-draw"
+pages_build_output_dir = "public"
+compatibility_date = "2025-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pb-secret-santa-draw"
+database_id = "4520b7fd-36ed-4c51-b180-139e6db08377"

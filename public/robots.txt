@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /g/
+Disallow: /api/
+Sitemap: https://pb-secret-santa-draw.pages.dev/sitemap.xml
