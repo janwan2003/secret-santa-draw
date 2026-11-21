@@ -50,6 +50,10 @@ try {
   const anna = await person('Anna', PHONE);
   await anna.page.goto(BASE + '/');
   await shot(anna.page, 'phone-landing');
+  await anna.page.screenshot({ path: path.join(SHOTS, 'phone-landing-fold.png') });
+  // the create form starts inside the first phone screen
+  assert.ok(await anna.page.$eval('#createForm', (e) => e.getBoundingClientRect().top) < 700, 'create form below the fold on phone');
+  assert.equal(await anna.page.getAttribute('#date', 'min') !== null, true);
   // validation
   await anna.page.click('#createBtn');
   assert.match(await anna.page.textContent('#createError'), /name/i);
@@ -91,6 +95,24 @@ try {
   await eve.page.waitForSelector('#joinError:not(:empty)');
   assert.match(await eve.page.textContent('#joinError'), /already joined/);
   assert.match(await (await fetch(groupUrl)).text(), /4 people have joined/);
+
+  // Background refresh must not wipe what the organiser is typing or close open panels
+  step = 'poll-safety';
+  await anna.page.click('#detEdit summary');
+  await anna.page.fill('#edNote', 'Draft note');
+  const gid = groupUrl.split('/g/')[1];
+  const finn = await fetch(BASE + '/api/exchanges/' + gid + '/join', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Finn' }) });
+  assert.equal(finn.status, 201);
+  await anna.page.waitForTimeout(13000); // one poll cycle (12 s)
+  assert.equal(await anna.page.inputValue('#edNote'), 'Draft note');
+  assert.ok(await anna.page.$eval('#detEdit', (d) => d.open), 'edit panel closed while typing');
+  await anna.page.click('.group-head h1'); // stop typing: the pending refresh lands
+  await anna.page.waitForSelector('[data-remove][data-name="Finn"]');
+  assert.ok(await anna.page.$eval('#detEdit', (d) => d.open), 'edit panel closed by refresh');
+  assert.equal(await anna.page.inputValue('#edNote'), 'Draft note', 'draft lost on refresh');
+  await anna.page.fill('#edNote', '');
+  await anna.page.click('[data-remove][data-name="Finn"]');
+  await anna.page.waitForFunction(() => !document.querySelector('[data-name="Finn"]'));
 
   // Ben writes a wishlist
   await ben.page.fill('#wishlist', 'Board games\nhttps://example.com/socks');
@@ -173,6 +195,25 @@ try {
   assert.equal((await cleo2.page.textContent('#giftee')).trim(), matches.Cleo);
   assert.ok(!cleo2.page.url().includes('#k='), 'token left in URL');
 
+  // 6b. Organiser makes Dan a new personal link after the draw; the old one stops working
+  step = 'relink';
+  await anna.page.click('#detRelink summary');
+  await anna.page.selectOption('#relinkWho', { label: 'Dan' });
+  await anna.page.click('#relinkBtn');
+  await anna.page.waitForSelector('.made-link code');
+  const newDanLink = (await anna.page.textContent('.made-link code')).trim();
+  assert.match(newDanLink, /#k=/);
+  await shot(anna.page, 'phone-organiser-drawn');
+  const dan2 = await person('Dan-new-phone', PHONE);
+  await dan2.page.goto(newDanLink);
+  await dan2.page.waitForSelector('#showMatch');
+  await dan2.page.click('#showMatch');
+  assert.equal((await dan2.page.textContent('#giftee')).trim(), matches.Dan, 'new link shows the same match');
+  await dan.page.reload();
+  await dan.page.waitForSelector('text=Names have been drawn');
+  await dan.page.goto(newDanLink); // Dan's laptop signs back in with the new link
+  await dan.page.waitForSelector('#showMatch');
+
   // 7. Organiser shows all pairs
   step = 'reveal-all';
   await anna.page.click('#revealBtn');
@@ -186,7 +227,18 @@ try {
   await desk.page.goto(BASE + '/privacy');
   await desk.page.waitForSelector('h1');
 
-  // 9. Organiser deletes the exchange (also cleans up test data on production)
+  // 9. Undo + redraw: a match revealed in the old draw is hidden again in the new one
+  step = 'redraw';
+  await anna.page.click('#undoDraw');
+  await anna.page.waitForSelector('#drawBtn');
+  await anna.page.click('#drawBtn');
+  await anna.page.waitForSelector('#undoDraw');
+  await cleo.page.reload();
+  await cleo.page.waitForSelector('#showMatch');
+  await cleo.page.click('#showMatch');
+  await cleo.page.waitForSelector('#giftee:not(.hidden)');
+
+  // 10. Organiser deletes the exchange (also cleans up test data on production)
   step = 'delete';
   await anna.page.click('#undoDraw');
   await anna.page.waitForSelector('#drawBtn');
@@ -199,9 +251,10 @@ try {
   step = 'console';
   // Ignore nothing: any console error fails the run
   assert.deepEqual(errors, [], 'console errors:\n' + errors.join('\n'));
-  console.log('E2E PASS: create, join x3, duplicate name, exclusion, draw, reveal, wishlist, messages, personal link, reveal-all, undo, delete, no console errors');
+  console.log('E2E PASS: form above fold, create, join x3, duplicate name, refresh keeps drafts + open panels, remove, exclusion, draw, reveal, wishlist, messages, personal link, organiser new link, reveal-all, undo + redraw hides match, delete, no console errors');
 } catch (e) {
   console.error('E2E FAIL at step:', step);
+  for (const c of browser.contexts()) for (const [i, pg] of c.pages().entries()) await pg.screenshot({ path: path.join(SHOTS, 'fail-' + browser.contexts().indexOf(c) + '-' + i + '.png'), fullPage: true }).catch(() => {});
   console.error(e);
   if (errors.length) console.error('console errors:', errors);
   process.exitCode = 1;

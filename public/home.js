@@ -2,6 +2,8 @@
   const form = document.getElementById('createForm');
   const errEl = document.getElementById('createError');
   const btn = document.getElementById('createBtn');
+  const d = new Date();
+  document.getElementById('date').min = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

@@ -114,7 +114,7 @@ async function nameTaken(env, exchangeId, name, exceptId = '') {
 
 async function stateFor(env, ex, me) {
   const { results: members } = await env.DB.prepare(
-    'SELECT id, name, is_organizer, participates, wishlist != \'\' AS has_wishlist, giftee_id FROM members WHERE exchange_id = ?1 ORDER BY created_at, id'
+    'SELECT id, name, is_organizer, participates, wishlist != \'\' AS has_wishlist, giftee_id FROM members WHERE exchange_id = ?1 ORDER BY created_at, rowid'
   ).bind(ex.id).all();
   const out = {
     id: ex.id,
@@ -123,6 +123,7 @@ async function stateFor(env, ex, me) {
     date: ex.event_date,
     note: ex.note,
     status: ex.status,
+    drawnAt: ex.drawn_at || null,
     revealed: !!ex.revealed,
     members: members.map((m) => ({
       id: m.id,
@@ -308,6 +309,18 @@ async function handle(request, env, parts) {
     if (await nameTaken(env, id, name)) return err(409, `Someone called "${name}" is already in.`);
     const m = await newMember(env, id, name);
     return json({ memberId: m.id, token: m.token }, 201);
+  }
+
+  // Organiser makes a new personal link for someone who lost access (new phone, other
+  // browser). Works before and after the draw; the old link stops working.
+  if (sub === 'members' && method === 'POST' && parts[3] && parts[4] === 'link') {
+    const target = parts[3];
+    if (target === me.id) return err(409, 'Copy your own personal link from the card at the bottom.');
+    const token = randomId(32);
+    const r = await env.DB.prepare('UPDATE members SET token_hash = ?1 WHERE id = ?2 AND exchange_id = ?3')
+      .bind(await sha256(token), target, id).run();
+    if (!r.meta || !r.meta.changes) return err(404, 'That person is not in this exchange.');
+    return json({ memberId: target, token }, 201);
   }
 
   if (sub === 'members' && method === 'DELETE' && parts[3]) {

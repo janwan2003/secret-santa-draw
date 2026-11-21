@@ -4,30 +4,46 @@
   const groupUrl = location.origin + '/g/' + encodeURIComponent(id);
 
   // Personal link: /g/<id>#k=<token> signs this device in as that person
-  const m = location.hash.match(/k=([A-Za-z0-9]{20,100})/);
-  if (m) {
+  // (also when the link is opened in a tab that already shows this group: only the hash changes)
+  function takeHashToken() {
+    const m = location.hash.match(/k=([A-Za-z0-9]{20,100})/);
+    if (!m) return false;
     const prev = Store.get(id) || {};
     Store.set(id, { ...prev, token: m[1], at: Date.now() });
     history.replaceState(null, '', location.pathname);
+    return true;
   }
+  takeHashToken();
 
   let local = Store.get(id) || {};
   let state = null;
   let messages = null;
   let lastJson = '';
   let busy = false;
+  let pendingRender = false;
+  // Personal links the organiser made this visit (shown until reload, survive re-renders)
+  let madeLinks = [];
 
   const token = () => local.token;
   const saveLocal = (patch) => { local = { ...local, ...patch }; Store.set(id, local); };
   const personalLink = () => groupUrl + '#k=' + token();
 
-  async function load() {
+  const typing = () => {
+    const a = document.activeElement;
+    return !!(a && app.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  };
+
+  async function load(poll = false) {
     try {
       const s = await api('/exchanges/' + encodeURIComponent(id), { token: token() });
       if (token() && !s.me) { Store.remove(id); local = {}; }
       if (s.me) saveLocal({ name: s.name, at: local.at || Date.now() });
       const j = JSON.stringify(s);
-      if (j !== lastJson) { lastJson = j; state = s; render(); }
+      if (j !== lastJson) {
+        lastJson = j; state = s;
+        // A background refresh waits until the person stops typing
+        if (poll && typing()) pendingRender = true; else render();
+      }
       if (s.me && s.status === 'drawn') loadMessages();
     } catch (e) {
       if (e.status === 404) {
@@ -63,12 +79,13 @@
     } finally {
       busy = false;
       if (btn && document.body.contains(btn)) { btn.disabled = false; btn.textContent = label; }
+      if (pendingRender && !typing()) { pendingRender = false; render(); }
     }
   }
 
   function applyState(s) {
     if (!s || !s.id) return;
-    state = s; lastJson = JSON.stringify(s); render();
+    state = s; lastJson = JSON.stringify(s); pendingRender = false; render();
   }
 
   // Preserve typed input across re-renders
@@ -78,7 +95,8 @@
       vals[el.id] = el.type === 'checkbox' ? el.checked : el.value;
     });
     const f = document.activeElement && document.activeElement.id;
-    return { vals, focus: f };
+    const open = [...app.querySelectorAll('details[id]')].filter((d) => d.open).map((d) => d.id);
+    return { vals, focus: f, open };
   }
   function restoreInputs(snap, skip = []) {
     for (const [k, v] of Object.entries(snap.vals)) {
@@ -87,7 +105,8 @@
       if (!el || el.dataset.fresh) continue;
       if (el.type === 'checkbox') el.checked = v; else el.value = v;
     }
-    if (snap.focus) { const el = document.getElementById(snap.focus); if (el) el.focus(); }
+    for (const dId of snap.open || []) { const d = document.getElementById(dId); if (d) d.open = true; }
+    if (snap.focus) { const el = document.getElementById(snap.focus); if (el) el.focus({ preventScroll: true }); }
   }
 
   function headHtml(s) {
@@ -145,7 +164,7 @@
   }
 
   function revealHtml(s) {
-    const shown = !!local.seen;
+    const shown = !!s.drawnAt && local.seen === s.drawnAt;
     return `<div class="card reveal">
       <div class="kicker">You are Secret Santa for</div>
       <div class="who${shown ? '' : ' hidden'}" id="giftee" aria-hidden="${shown ? 'false' : 'true'}">${esc(shown ? s.giftee.name : 'Someone nice')}</div>
@@ -200,9 +219,10 @@
         <h3>Add someone without a phone</h3>
         <p class="muted small">You get a personal link for them to print or pass on. Anyone who opens it sees their match.</p>
         <form class="compose" id="addPerson"><input id="addName" type="text" maxlength="40" placeholder="Name" autocomplete="off"><button class="btn small secondary" type="submit">Add</button></form>
-        <div id="addedLink"></div>
+        <div id="addedLink">${madeLinksHtml(s)}</div>
+        ${relinkHtml(s)}
         <hr class="soft">
-        <details><summary class="small" style="cursor:pointer;font-weight:700">Edit details</summary>
+        <details id="detEdit"><summary class="small" style="cursor:pointer;font-weight:700">Edit details</summary>
           <div style="margin-top:12px">
             <div class="field"><label for="edName">Group name</label><input id="edName" type="text" maxlength="60" value="${esc(s.name)}"></div>
             <div class="row"><div class="field"><label for="edBudget">Budget</label><input id="edBudget" type="text" maxlength="30" value="${esc(s.budget)}"></div>
@@ -223,12 +243,30 @@
         <button class="btn ghost" id="undoDraw">Undo draw</button>
       </div>
       <p class="hint">Show the pairs only after the gifts are opened. Undo the draw to add or remove people; this deletes messages and everyone's match.</p>
+      ${relinkHtml(s)}
+      ${madeLinksHtml(s)}
     </div>`;
+  }
+
+  function madeLinksHtml(s) {
+    const ids = new Set(s.members.map((x) => x.id));
+    return madeLinks.filter((l) => ids.has(l.memberId)).map((l, i) => `<div class="note-box made-link" style="margin-top:10px">Personal link for <b>${esc(l.name)}</b>. Send or print it for them only; it opens their match. It's shown only until you leave this page:<div class="share-link" style="background:#fff"><code>${esc(l.link)}</code><button class="btn small" data-copylink="${i}">Copy</button></div></div>`).join('');
+  }
+
+  function relinkHtml(s) {
+    const others = s.members.filter((x) => !s.me || x.id !== s.me.id);
+    if (!others.length) return '';
+    const opts = others.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+    return `<hr class="soft">
+      <details id="detRelink"><summary class="small" style="cursor:pointer;font-weight:700">Someone lost access?</summary>
+      <p class="muted small" style="margin-top:10px">New phone, or opened the link in a different browser? Make them a new personal link. Their old link stops working. You won't see their match unless you open the link yourself.</p>
+      <div class="compose"><select id="relinkWho" aria-label="Person who lost access">${opts}</select><button class="btn small secondary" id="relinkBtn" type="button">New link</button></div>
+      </details>`;
   }
 
   function personalHtml(s) {
     return `<div class="card">
-      <details><summary style="cursor:pointer;font-weight:700">Your personal link (for another phone)</summary>
+      <details id="detPersonal"><summary style="cursor:pointer;font-weight:700">Your personal link (for another phone or browser)</summary>
         <p class="muted small" style="margin-top:10px">This link opens the group as <b>${esc(s.me.name)}</b> on any device. Keep it private: anyone with it can see your match.</p>
         <div class="btns"><button class="btn secondary small" id="copyPersonal">Copy my personal link</button></div>
         ${!s.me.organizer && s.status === 'open' ? `<hr class="soft"><button class="btn ghost" id="leaveBtn">Leave this Secret Santa</button>` : ''}
@@ -266,7 +304,7 @@
         </form>`;
         html += s.members.length ? membersHtml(s, false) : '';
       } else {
-        html += `<div class="card"><h2>Names have been drawn</h2><p class="muted">If you're in this group, open your personal link on this phone. Not in it yet? Ask the organiser to undo the draw, then join.</p></div>`;
+        html += `<div class="card"><h2>Names have been drawn</h2><p class="muted">Already joined on another phone or browser? Open your personal link here, or ask the organiser for a new one. Not in yet? Ask the organiser to undo the draw, then join.</p></div>`;
         html += membersHtml(s, false);
       }
       html += pairsHtml(s);
@@ -291,7 +329,7 @@
     html += personalHtml(s);
     if (!me.organizer || s.status === 'drawn') html += startOwnHtml();
     app.innerHTML = html;
-    restoreInputs(snap, ['edName', 'edBudget', 'edDate', 'edNote', 'edPart']);
+    restoreInputs(snap);
     bindMember();
     renderThreads();
   }
@@ -351,7 +389,7 @@
       } else toast((await copyText(groupUrl)) ? 'Link copied. Paste it in your group chat.' : groupUrl);
     });
     on('copyPersonal', 'click', async () => toast((await copyText(personalLink())) ? 'Personal link copied. Keep it private.' : personalLink()));
-    on('showMatch', 'click', () => { saveLocal({ seen: true }); render(); });
+    on('showMatch', 'click', () => { saveLocal({ seen: state.drawnAt }); render(); });
     on('hideMatch', 'click', () => { saveLocal({ seen: false }); render(); });
     on('saveWish', 'click', (e) => act(e.target, async () => {
       e.target.textContent = 'Saving…';
@@ -368,7 +406,6 @@
       act(e.target, async () => {
         e.target.textContent = 'Drawing…';
         const s = await api(path('/draw'), { method: 'POST', token: token() });
-        saveLocal({ seen: false });
         applyState(s); window.scrollTo(0, 0); toast('Names drawn! Tell everyone to open the link.');
       });
     });
@@ -401,17 +438,27 @@
       if (!name) return;
       act(e.submitter, async () => {
         const r = await api(path('/members'), { method: 'POST', token: token(), body: { name } });
-        const link = groupUrl + '#k=' + r.token;
+        madeLinks = madeLinks.filter((l) => l.memberId !== r.memberId).concat({ memberId: r.memberId, name, link: groupUrl + '#k=' + r.token });
         input.value = '';
         lastJson = '';
         await load();
-        const box = document.getElementById('addedLink');
-        if (box) {
-          box.innerHTML = `<div class="note-box" style="margin-top:10px">Personal link for <b>${esc(name)}</b>. Send or print it for them only. It's shown once:<div class="share-link" style="background:#fff"><code>${esc(link)}</code><button class="btn small" id="copyAdded">Copy</button></div></div>`;
-          on('copyAdded', 'click', async () => toast((await copyText(link)) ? 'Copied' : link));
-        }
       });
     });
+    on('relinkBtn', 'click', (e) => {
+      const sel = document.getElementById('relinkWho');
+      const who = state.members.find((x) => x.id === sel.value);
+      if (!who || !confirm(`Make a new personal link for ${who.name}? Their old link stops working.`)) return;
+      act(e.target, async () => {
+        const r = await api(path('/members/' + encodeURIComponent(who.id) + '/link'), { method: 'POST', token: token() });
+        madeLinks = madeLinks.filter((l) => l.memberId !== r.memberId).concat({ memberId: r.memberId, name: who.name, link: groupUrl + '#k=' + r.token });
+        render();
+        toast('New link made. Copy it below.');
+      });
+    });
+    app.querySelectorAll('[data-copylink]').forEach((b) => b.addEventListener('click', async () => {
+      const l = madeLinks.filter((x) => state.members.some((m) => m.id === x.memberId))[+b.dataset.copylink];
+      if (l) toast((await copyText(l.link)) ? 'Copied' : l.link);
+    }));
     on('saveDetails', 'click', (e) => act(e.target, async () => {
       let s = await api(path(), { method: 'PATCH', token: token(), body: {
         name: document.getElementById('edName').value,
@@ -442,7 +489,14 @@
     sendMsg('composeSanta', 'msgSanta', 'santa');
   }
 
+  window.addEventListener('hashchange', () => {
+    if (takeHashToken()) { local = Store.get(id) || {}; lastJson = ''; messages = null; load(); }
+  });
+
   load();
-  setInterval(() => { if (!document.hidden && !busy) load(); }, 12000);
+  setInterval(() => { if (!document.hidden && !busy) load(true); }, 12000);
+  app.addEventListener('focusout', () => setTimeout(() => {
+    if (pendingRender && !busy && !typing()) { pendingRender = false; render(); }
+  }, 400));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 })();
