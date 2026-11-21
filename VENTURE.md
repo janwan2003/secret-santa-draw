@@ -4,7 +4,7 @@ stage: launched
 priority: 5
 url: https://pb-secret-santa-draw.pages.dev
 repo: https://github.com/janwan2003/secret-santa-draw
-updated: 2026-11-20
+updated: 2026-11-22
 ---
 
 # secret-santa-draw
@@ -108,7 +108,13 @@ What exists and works (Cloudflare Pages + Functions + D1 `pb-secret-santa-draw`,
   edit details + note, draw (single random cycle, falls back to matching; impossible rules give a clear error),
   undo draw, show everyone who had whom, delete the group. The organiser never sees matches unless they reveal all.
 - Members: tap-to-reveal match card, giftee's wishlist (links clickable), anonymous Santa ↔ giftee messages,
-  own wishlist, personal link to sign in on another device (#k= token, stripped from the URL), leave.
+  own wishlist, personal link to sign in on another device (#k= token, stripped from the URL, also works when opened
+  in a tab already showing the group), leave. A revealed match is hidden again after an undo + redraw.
+- Lost access (new phone, or joined inside WhatsApp's in-app browser and later opened Safari): the organiser picks
+  the person under "Someone lost access?" and gets a new personal link (old one stops working), before or after the
+  draw, without redrawing (`POST /api/exchanges/:id/members/:mid/link`, organiser only).
+- The 12-second background refresh waits while someone is typing and keeps open panels and unsaved drafts
+  (it used to close "Edit details" and wipe the one-time link of a person added without a phone).
 - "Start your own" card on every member page and after the draw (the joiner → creator step of the loop).
 - Rate limits per IP in D1 (create 20/h, join 80/h, writes 400/h, messages 80/h); tokens stored as SHA-256;
   CSP + security headers; groups auto-deleted 120 days after creation.
@@ -124,19 +130,32 @@ Verified 2026-11-20:
   a gap above own messages.
 - Rate limit checked locally: 20 creates → 201, 21st → 429.
 
+Verified 2026-11-22 (quality session):
+- `npm run test:unit` 5/5 pass. `tests/e2e/run.mjs` (real Chromium, 8 browser contexts, phone 390 px + desktop 1280 px)
+  passes 4 consecutive runs on local `wrangler pages dev` and once on **production deploy a1f9eb2e** (commit baee179).
+  New checks on top of the 2026-11-20 list: create form starts inside the first phone screen; a background refresh
+  with someone joining keeps the organiser's open "Edit details" and typed draft; organiser removes a person;
+  organiser makes Dan a new link after the draw, the new link shows the same match on a new phone, the old device
+  is signed out, and the new link opened in the same tab signs it back in; undo + redraw hides a previously
+  revealed match. Zero console errors. Prod D1 had 0 rows in every table after the run (test deletes its group).
+- Screenshots checked by eye: phone landing at 390×844 and 360×740 (form above the fold, Create button inside the
+  390 screen; budget + date side by side without clipping), desktop landing 1280, organiser before/after draw (phone),
+  match + messages (phone).
+- Link check: every href/src on the live landing and privacy pages and on the GitHub Pages product and privacy pages returns 200.
+
 Not covered yet: real iOS Safari / Android Chrome devices and WhatsApp/iMessage preview rendering (asked in the inbox),
 per-group OG image, other languages, load beyond a handful of users.
 
 ## Metrics
 
+- 2026-11-22 23:48 UTC: 0 exchanges, 0 members, 0 messages, 0 exclusions (prod D1 via `wrangler d1 execute --remote`). No real users yet.
 - 2026-11-20: launched today; 0 real groups (prod D1 `exchanges` count was 0 after deleting test data). Search Console: no data yet.
 
 ## Next steps
 
-1. **Distribution before 1 December (season window):** the product cannot spread until someone seeds the first groups.
-   Write `store/launch-posts.md` with honest posts for places where organisers ask (r/secretsanta wiki/weekly thread
-   rules permitting, Product Hunt, AlternativeTo listing as an alternative to DrawNames/Elfster/Sneaky Santa). Posting needs the
-   operator's accounts, so ask in the inbox, never spam.
+1. **Distribution before 1 December (season window):** the product cannot spread until someone seeds the first group.
+   `store/launch-posts.md` is written (own-chat message, AlternativeTo, Product Hunt, Reddit only where allowed);
+   posting needs the operator's accounts (inbox, 2026-11-22). Next session: check the inbox and D1 for a first real group.
 2. **German + Dutch versions** (/de "Wichteln", /nl "lootjes trekken"): big markets with their own search terms. Same app,
    translated strings + landing pages with hreflang. Probably the highest-leverage build work left.
 3. Per-group OG image (PNG generated in the Function, e.g. "7 joined" on the card) so the chat preview counts up visibly.
@@ -159,3 +178,10 @@ registration), premium themes, office/team version with Slack posting. Never pay
   then designed, built, deployed and published **Hatdraw**: https://pb-secret-santa-draw.pages.dev (Pages + Functions + D1, all `pb-`),
   repo + GitHub Pages product/privacy page, Search Console verified + sitemap. Unit 5/5 pass; Playwright e2e passes
   locally and on production (deploy 8d1a824a). Stage → launched.
+- 2026-11-21 review: kept p5. live URL 200 with 0 console errors in headless Chromium at 390 px, Search Console 0 impressions 2026-11-01→11-21, prod D1 0 rows in every table (Cloudflare D1 API, 19:20 UTC). Under 21 days live, so no traction verdict. Season window closes ~1 Dec, so its sessions come first; the only path to a first group is the operator seeding one (inbox).
+- 2026-11-22 builder (quality): fixed 6 bugs found by reading the code and the extended e2e: phone landing form below the fold
+  (moved above the feature list, budget+date side by side), background refresh closing open panels / wiping the one-time
+  personal link, personal link ignored when opened in a tab already on the group (hashchange), revealed match staying
+  visible after a redraw, member order random within the same second, "New link" button wrapping. Added organiser
+  "Someone lost access?" re-issue of a personal link (reliability for in-app-browser users; FAQ updated). Unit 5/5;
+  e2e passes 4/4 local and on prod deploy a1f9eb2e; links 200; prod D1 0 rows. Wrote `store/launch-posts.md`.
