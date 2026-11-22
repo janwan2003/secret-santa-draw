@@ -16,7 +16,7 @@ npx -y pnpm@9 install
 npx wrangler d1 execute pb-secret-santa-draw --local --file=schema.sql
 npx wrangler pages dev --port 8788 --ip 127.0.0.1
 npm run test:unit
-BASE=http://127.0.0.1:8788 node tests/e2e/run.mjs      # real Chromium, 8 browser contexts, screenshots in shots/ (use another --port if 8788 is taken)
+BASE=http://127.0.0.1:8788 node tests/e2e/run.mjs      # real Chromium, 9 browser contexts, screenshots in shots/ (use another --port if 8788 is taken)
 ```
 
 ## Deploy

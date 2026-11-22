@@ -66,3 +66,43 @@ async function copyText(text) {
   ta.remove();
   return ok;
 }
+
+// In-page confirm dialog. Native confirm() shows the site's raw address and, in some
+// in-app browsers (WebViews without a dialog handler), returns false without showing
+// anything, so the button would silently do nothing.
+function ask(message, { ok = 'OK', cancel = 'Cancel', title = '', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const prev = document.activeElement;
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-wrap';
+    wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" ${title ? 'aria-labelledby="modalTitle"' : ''} aria-describedby="modalText">
+      ${title ? `<h3 id="modalTitle">${esc(title)}</h3>` : ''}
+      <p id="modalText">${esc(message)}</p>
+      <div class="modal-btns"><button type="button" class="btn secondary" data-cancel>${esc(cancel)}</button><button type="button" class="btn${danger ? '' : ' green'}" data-ok>${esc(ok)}</button></div>
+    </div>`;
+    const done = (v) => {
+      document.removeEventListener('keydown', onKey, true);
+      wrap.remove();
+      document.body.classList.remove('modal-open');
+      if (prev && prev.focus && document.body.contains(prev)) prev.focus({ preventScroll: true });
+      resolve(v);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(false); }
+      if (e.key === 'Tab') { // keep focus inside the dialog
+        const b = [...wrap.querySelectorAll('button')];
+        const i = b.indexOf(document.activeElement);
+        e.preventDefault();
+        b[(i + (e.shiftKey ? b.length - 1 : 1)) % b.length].focus();
+      }
+    };
+    wrap.addEventListener('click', (e) => {
+      if (e.target === wrap || e.target.closest('[data-cancel]')) done(false);
+      else if (e.target.closest('[data-ok]')) done(true);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(wrap);
+    document.body.classList.add('modal-open');
+    wrap.querySelector('[data-ok]').focus({ preventScroll: true });
+  });
+}

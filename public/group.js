@@ -91,8 +91,11 @@
   // Preserve typed input across re-renders
   function snapshotInputs() {
     const vals = {};
+    // Only fields the person changed: an unchanged field takes the fresh server value
     app.querySelectorAll('input[id], textarea[id], select[id]').forEach((el) => {
-      vals[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+      if (el.type === 'checkbox') { if (el.checked !== el.defaultChecked) vals[el.id] = el.checked; }
+      else if (el.tagName === 'SELECT') vals[el.id] = el.value;
+      else if (el.value !== el.defaultValue) vals[el.id] = el.value;
     });
     const f = document.activeElement && document.activeElement.id;
     const open = [...app.querySelectorAll('details[id]')].filter((d) => d.open).map((d) => d.id);
@@ -103,7 +106,9 @@
       if (skip.includes(k)) continue;
       const el = document.getElementById(k);
       if (!el || el.dataset.fresh) continue;
-      if (el.type === 'checkbox') el.checked = v; else el.value = v;
+      if (el.type === 'checkbox') el.checked = v;
+      else if (el.tagName === 'SELECT') { if ([...el.options].some((o) => o.value === v)) el.value = v; }
+      else el.value = v;
     }
     for (const dId of snap.open || []) { const d = document.getElementById(dId); if (d) d.open = true; }
     if (snap.focus) { const el = document.getElementById(snap.focus); if (el) el.focus({ preventScroll: true }); }
@@ -173,6 +178,7 @@
            <div style="margin-top:14px"><button class="btn small" id="hideMatch">Hide</button></div>`
         : `<div class="sub">Make sure nobody is looking at your screen.</div>
            <div style="margin-top:16px"><button class="btn" id="showMatch">Tap to reveal</button></div>`}
+      <div class="made-with">Drawn with Hatdraw</div>
     </div>
     ${shown ? `<div class="card">
       <h3>${esc(s.giftee.name)}'s wishlist</h3>
@@ -202,7 +208,10 @@
     if (s.status === 'open') {
       const excl = (s.exclusions || []).map(([a, b]) =>
         `<li><span>${esc(byId[a] || '?')} ↔ ${esc(byId[b] || '?')}</span><button class="btn ghost" data-unexclude="${esc(a)}|${esc(b)}">Remove</button></li>`).join('');
-      const opts = people.filter((x) => x.participates).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+      const pick = people.filter((x) => x.participates);
+      const opts = pick.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+      // the second list starts on the second person, so the default pair is valid
+      const optsB = pick.map((x, i) => `<option value="${esc(x.id)}"${i === 1 ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
       return `<div class="card organizer">
         <div class="label">Organiser</div>
         <h2>Draw names</h2>
@@ -213,7 +222,7 @@
         <h3>Can't draw each other</h3>
         <p class="muted small">For couples or people who live together.</p>
         ${excl ? `<ul class="pairs">${excl}</ul>` : ''}
-        ${drawing >= 2 ? `<div class="row"><div class="field"><select id="exA" aria-label="First person">${opts}</select></div><div class="field"><select id="exB" aria-label="Second person">${opts}</select></div></div>
+        ${drawing >= 2 ? `<div class="pair-pick"><select id="exA" aria-label="First person">${opts}</select><span aria-hidden="true">↔</span><select id="exB" aria-label="Second person">${optsB}</select></div>
         <button class="btn secondary small" id="addExcl">Add pair</button>` : '<p class="muted small">Add pairs once people have joined.</p>'}
         <hr class="soft">
         <h3>Add someone without a phone</h3>
@@ -396,26 +405,26 @@
       const s = await api(path('/me'), { method: 'PATCH', token: token(), body: { wishlist: document.getElementById('wishlist').value } });
       applyState(s); toast('Wishlist saved');
     }));
-    on('leaveBtn', 'click', (e) => {
-      if (!confirm('Leave this Secret Santa?')) return;
+    on('leaveBtn', 'click', async (e) => {
+      if (!(await ask('You can join again with the group link while names are not drawn yet.', { title: 'Leave this Secret Santa?', ok: 'Leave', danger: true }))) return;
       act(e.target, async () => { await api(path('/me'), { method: 'DELETE', token: token() }); Store.remove(id); local = {}; lastJson = ''; await load(); });
     });
-    on('drawBtn', 'click', (e) => {
+    on('drawBtn', 'click', async (e) => {
       const n = state.members.filter((x) => x.participates).length;
-      if (!confirm(`Draw names for ${n} people now? Everyone will see their match when they open the link.`)) return;
+      if (!(await ask(`Everyone sees their own match when they open the group link. You can undo it later if someone joins late.`, { title: `Draw names for ${n} people?`, ok: 'Draw names' }))) return;
       act(e.target, async () => {
         e.target.textContent = 'Drawing…';
         const s = await api(path('/draw'), { method: 'POST', token: token() });
         applyState(s); window.scrollTo(0, 0); toast('Names drawn! Tell everyone to open the link.');
       });
     });
-    on('undoDraw', 'click', (e) => {
-      if (!confirm('Undo the draw? Everyone loses their match and messages, and you draw again.')) return;
+    on('undoDraw', 'click', async (e) => {
+      if (!(await ask('Everyone loses their match and their anonymous messages. You can then add or remove people and draw again.', { title: 'Undo the draw?', ok: 'Undo draw', danger: true }))) return;
       act(e.target, async () => { applyState(await api(path('/undo-draw'), { method: 'POST', token: token() })); toast('Draw undone'); });
     });
-    on('revealBtn', 'click', (e) => {
+    on('revealBtn', 'click', async (e) => {
       const next = !state.revealed;
-      if (next && !confirm('Show everyone who had whom? Do this after the gifts are opened.')) return;
+      if (next && !(await ask('Everyone who opens the link will see all the pairs. Do this after the gifts are opened.', { title: 'Show who had whom?', ok: 'Show the pairs' }))) return;
       act(e.target, async () => applyState(await api(path('/reveal'), { method: 'POST', token: token(), body: { revealed: next } })));
     });
     on('addExcl', 'click', (e) => {
@@ -427,8 +436,8 @@
       const [a, c] = b.dataset.unexclude.split('|');
       act(b, async () => applyState(await api(path('/exclusions'), { method: 'DELETE', token: token(), body: { a, b: c } })));
     }));
-    app.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', () => {
-      if (!confirm(`Remove ${b.dataset.name} from this Secret Santa?`)) return;
+    app.querySelectorAll('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
+      if (!(await ask(`They can join again with the group link.`, { title: `Remove ${b.dataset.name}?`, ok: 'Remove', danger: true }))) return;
       act(b, async () => applyState(await api(path('/members/' + encodeURIComponent(b.dataset.remove)), { method: 'DELETE', token: token() })));
     }));
     on('addPerson', 'submit', (e) => {
@@ -444,10 +453,10 @@
         await load();
       });
     });
-    on('relinkBtn', 'click', (e) => {
+    on('relinkBtn', 'click', async (e) => {
       const sel = document.getElementById('relinkWho');
       const who = state.members.find((x) => x.id === sel.value);
-      if (!who || !confirm(`Make a new personal link for ${who.name}? Their old link stops working.`)) return;
+      if (!who || !(await ask(`Their old link stops working. Their match stays the same.`, { title: `New personal link for ${who.name}?`, ok: 'Make new link' }))) return;
       act(e.target, async () => {
         const r = await api(path('/members/' + encodeURIComponent(who.id) + '/link'), { method: 'POST', token: token() });
         madeLinks = madeLinks.filter((l) => l.memberId !== r.memberId).concat({ memberId: r.memberId, name: who.name, link: groupUrl + '#k=' + r.token });
@@ -470,8 +479,8 @@
       if (part !== state.me.participates) s = await api(path('/me'), { method: 'PATCH', token: token(), body: { participates: part } });
       applyState(s); toast('Saved');
     }));
-    on('deleteEx', 'click', (e) => {
-      if (!confirm('Delete this Secret Santa for everyone? This cannot be undone.')) return;
+    on('deleteEx', 'click', async (e) => {
+      if (!(await ask('The group, everyone\'s matches, wishlists and messages are deleted for everyone. This cannot be undone.', { title: 'Delete this Secret Santa?', ok: 'Delete', danger: true }))) return;
       act(e.target, async () => { await api(path(), { method: 'DELETE', token: token() }); Store.remove(id); location.href = '/'; });
     });
     const sendMsg = (formId, inputId, to) => on(formId, 'submit', (e) => {

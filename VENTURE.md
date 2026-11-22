@@ -116,6 +116,9 @@ What exists and works (Cloudflare Pages + Functions + D1 `pb-secret-santa-draw`,
 - The 12-second background refresh waits while someone is typing and keeps open panels and unsaved drafts
   (it used to close "Edit details" and wipe the one-time link of a person added without a phone).
 - "Start your own" card on every member page and after the draw (the joiner → creator step of the loop).
+- In-page confirmation dialogs (bottom sheet on phones, Escape/backdrop cancels, focus kept inside); unknown paths return a 404 page.
+- Landing "How it works" and the GitHub Pages product page show real phone screenshots (`public/shot-*.webp`, ~25 KB each,
+  cropped from the production e2e run's screenshots in `shots-prod/`).
 - Rate limits per IP in D1 (create 20/h, join 80/h, writes 400/h, messages 80/h); tokens stored as SHA-256;
   CSP + security headers; groups auto-deleted 120 days after creation.
 
@@ -143,11 +146,26 @@ Verified 2026-11-22 (quality session):
   match + messages (phone).
 - Link check: every href/src on the live landing and privacy pages and on the GitHub Pages product and privacy pages returns 200.
 
+Verified 2026-11-22 (quality session 2, prod deploy 4c5610e2):
+- Every confirmation (draw, undo, show pairs, remove, leave, new link, delete) is now an in-page dialog, not native
+  `confirm()`. Native dialogs show the raw pages.dev address, and in WebViews without a dialog handler they return
+  false without showing anything, which would make "Draw names" silently do nothing. The e2e fails if any native dialog appears.
+- `npm run test:unit` 5/5. `tests/e2e/run.mjs` (real Chromium, 9 browser contexts) passes on local `wrangler pages dev` and
+  twice on production (deploys 9ed98ab2 and 4c5610e2). New checks: draw dialog cancel and Escape do nothing, confirm draws;
+  a name `<img src=x onerror=…>` renders as text and does not run; a 40-character name wraps without horizontal overflow at 390 px;
+  a field the organiser has not touched takes a newer server value on refresh (budget changed via API shows up within one poll);
+  the default "can't draw each other" pair is two different people; `/no-such-page` returns 404 with its own page.
+- Screenshots checked by eye: draw dialog (phone, bottom sheet), organiser with odd names (phone), before-reveal card with the
+  new "Drawn with Hatdraw" line, landing "How it works" with real phone screenshots (desktop 1280 + phone 390, 0 console errors,
+  no horizontal overflow), GitHub Pages product page (desktop).
+- Link check on production: /, /privacy, 3 screenshots, app.css, og.png, icon.svg → 200; unknown path → 404. Prod D1 0 rows after the runs.
+
 Not covered yet: real iOS Safari / Android Chrome devices and WhatsApp/iMessage preview rendering (asked in the inbox),
 per-group OG image, other languages, load beyond a handful of users.
 
 ## Metrics
 
+- 2026-11-22 14:27 UTC: 0 exchanges, 0 members, 0 messages, 0 exclusions (prod D1 via `wrangler d1 execute --remote`, read-only COUNT). Still no real users.
 - 2026-11-22 23:48 UTC: 0 exchanges, 0 members, 0 messages, 0 exclusions (prod D1 via `wrangler d1 execute --remote`). No real users yet.
 - 2026-11-20: launched today; 0 real groups (prod D1 `exchanges` count was 0 after deleting test data). Search Console: no data yet.
 
@@ -159,7 +177,8 @@ per-group OG image, other languages, load beyond a handful of users.
 2. **German + Dutch versions** (/de "Wichteln", /nl "lootjes trekken"): big markets with their own search terms. Same app,
    translated strings + landing pages with hreflang. Probably the highest-leverage build work left.
 3. Per-group OG image (PNG generated in the Function, e.g. "7 joined" on the card) so the chat preview counts up visibly.
-4. Quality: test on real iOS Safari / Android Chrome (in-app browsers of WhatsApp/Instagram) and fix what breaks;
+4. Quality: test on real iOS Safari / Android Chrome (in-app browsers of WhatsApp/Instagram) and fix what breaks
+   (only Chromium is installed here; Playwright WebKit would need ~100 MB + system libraries, disk has ~3.5 GB free);
    an "add to calendar" for the exchange day; a printable card for people without a phone.
 5. "Same group next year": copy a group (names + exclusions) and avoid last year's pairs.
 6. Weekly `## Metrics` from D1: `SELECT COUNT(*) FROM exchanges WHERE created_at > ...` (creators) and members (joiners).
@@ -185,3 +204,9 @@ registration), premium themes, office/team version with Slack posting. Never pay
   visible after a redraw, member order random within the same second, "New link" button wrapping. Added organiser
   "Someone lost access?" re-issue of a personal link (reliability for in-app-browser users; FAQ updated). Unit 5/5;
   e2e passes 4/4 local and on prod deploy a1f9eb2e; links 200; prod D1 0 rows. Wrote `store/launch-posts.md`.
+- 2026-11-22 review: kept p5. URL 200, 0 console errors (headless Chromium, 390 px, 2026-11-22 ~03:40 UTC); Search Console 0 impressions 11-01→11-22; prod D1 0 rows in every data table (Cloudflare D1 API, read-only COUNT). Under 21 days live, so no traction verdict. Season closes ~5 Dec; the launch posts in store/launch-posts.md wait on the operator's yes/no.
+- 2026-11-22 builder (quality 2): replaced every native `confirm()` with an in-page dialog (reliability in in-app WebViews, looks professional);
+  refresh no longer puts stale values back into untouched fields; exclusion pickers side by side with ↔ and a valid default pair; larger × remove
+  targets; iOS empty-date-input fix; focus-visible outlines; long names wrap; 404 page; "Drawn with Hatdraw" on the reveal card (brand on screenshots);
+  real phone screenshots on the landing and product page. Unit 5/5; e2e (now with dialog cancel/Escape, XSS name, long name, fresh-field, 404 checks)
+  passes locally and on prod deploys 9ed98ab2 + 4c5610e2; prod links 200; prod D1 0 rows.

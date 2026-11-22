@@ -32,12 +32,17 @@ async function person(label, opts) {
   const page = await ctx.newPage();
   page.on('console', (m) => {
     // Eve's duplicate-name join is meant to get a 409; any other error fails the run.
-    if (m.type() === 'error' && !(label === 'Eve' && /status of 409/.test(m.text()))) errors.push(`${label}: ${m.text()}`);
+    // The 404 visitor's page load itself is meant to log a 404.
+    if (m.type() === 'error' && !(label === 'Eve' && /status of 409/.test(m.text())) && !(label === 'lost-visitor' && /status of 404/.test(m.text()))) errors.push(`${label}: ${m.text()}`);
   });
   page.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
-  page.on('dialog', (d) => d.accept());
+  // Native confirm()/alert() must never appear: in some in-app browsers they return
+  // false without showing anything. Every confirmation is the in-page dialog.
+  page.on('dialog', (d) => { errors.push(`${label}: native dialog "${d.message()}"`); d.dismiss(); });
   return { label, ctx, page };
 }
+// Confirm the in-page dialog that an action opened
+async function ok(page) { await page.click('.modal [data-ok]'); await page.waitForSelector('.modal', { state: 'detached' }); }
 const shot = (p, name) => p.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: true });
 
 let step = 'start';
@@ -96,6 +101,24 @@ try {
   assert.match(await eve.page.textContent('#joinError'), /already joined/);
   assert.match(await (await fetch(groupUrl)).text(), /4 people have joined/);
 
+  // Hostile and very long names render as text and don't break the phone layout
+  step = 'odd-names';
+  const odd = ['<img src=x onerror=window.__x=1>', 'Bartholomew-Maximilian-Fitzgerald-Third'];
+  for (const n of odd) {
+    const r = await fetch(BASE + '/api/exchanges/' + groupUrl.split('/g/')[1] + '/join', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: n }) });
+    assert.equal(r.status, 201, 'odd name join');
+  }
+  await anna.page.reload();
+  await anna.page.waitForSelector('[data-remove][data-name="<img src=x onerror=window.__x=1>"]');
+  assert.equal(await anna.page.evaluate(() => window.__x), undefined, 'name was run as HTML');
+  assert.ok(await anna.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'long name overflows the phone width');
+  await shot(anna.page, 'phone-organiser-odd-names');
+  for (const n of odd) {
+    await anna.page.click(`[data-remove][data-name="${n.replace(/"/g, '\\"')}"]`);
+    await ok(anna.page);
+    await anna.page.waitForFunction((x) => ![...document.querySelectorAll('[data-remove]')].some((b) => b.dataset.name === x), n);
+  }
+
   // Background refresh must not wipe what the organiser is typing or close open panels
   step = 'poll-safety';
   await anna.page.click('#detEdit summary');
@@ -112,7 +135,18 @@ try {
   assert.equal(await anna.page.inputValue('#edNote'), 'Draft note', 'draft lost on refresh');
   await anna.page.fill('#edNote', '');
   await anna.page.click('[data-remove][data-name="Finn"]');
+  await ok(anna.page);
   await anna.page.waitForFunction(() => !document.querySelector('[data-name="Finn"]'));
+
+  // An untouched field takes a newer server value on refresh (changed on another device)
+  step = 'fresh-fields';
+  await anna.page.reload();
+  await anna.page.click('#detEdit summary');
+  const annaTok = await anna.page.evaluate((k) => JSON.parse(localStorage.getItem(k)).token, 'hatdraw:' + gid);
+  const pr = await fetch(BASE + '/api/exchanges/' + gid, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-member-token': annaTok }, body: JSON.stringify({ budget: '$30' }) });
+  assert.equal(pr.status, 200);
+  await anna.page.waitForFunction(() => document.getElementById('edBudget').value === '$30', null, { timeout: 20000 });
+  await fetch(BASE + '/api/exchanges/' + gid, { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-member-token': annaTok }, body: JSON.stringify({ budget: '$25' }) });
 
   // Ben writes a wishlist
   await ben.page.fill('#wishlist', 'Board games\nhttps://example.com/socks');
@@ -131,8 +165,20 @@ try {
   await anna.page.click('#addExcl');
   await anna.page.waitForSelector('.pairs li');
   assert.match(await anna.page.textContent('.pairs'), /Anna ↔ Ben|Ben ↔ Anna/);
+  // default exclusion pair is two different people
+  assert.notEqual(await anna.page.inputValue('#exA'), await anna.page.inputValue('#exB'));
   await shot(anna.page, 'phone-organiser-ready');
   await anna.page.click('#drawBtn');
+  await anna.page.waitForSelector('.modal');
+  await anna.page.waitForTimeout(300); // let the fade-in finish
+  await anna.page.screenshot({ path: path.join(SHOTS, 'phone-confirm-draw.png') });
+  await anna.page.click('.modal [data-cancel]');
+  await anna.page.click('#drawBtn');
+  await anna.page.keyboard.press('Escape');
+  await anna.page.waitForSelector('.modal', { state: 'detached' });
+  assert.ok(await anna.page.$('#drawBtn'), 'cancel still drew names');
+  await anna.page.click('#drawBtn');
+  await ok(anna.page);
   await anna.page.waitForSelector('#showMatch');
 
   // late joiner is blocked
@@ -200,6 +246,7 @@ try {
   await anna.page.click('#detRelink summary');
   await anna.page.selectOption('#relinkWho', { label: 'Dan' });
   await anna.page.click('#relinkBtn');
+  await ok(anna.page);
   await anna.page.waitForSelector('.made-link code');
   const newDanLink = (await anna.page.textContent('.made-link code')).trim();
   assert.match(newDanLink, /#k=/);
@@ -217,6 +264,7 @@ try {
   // 7. Organiser shows all pairs
   step = 'reveal-all';
   await anna.page.click('#revealBtn');
+  await ok(anna.page);
   await anna.page.waitForSelector('.reveal-list li');
   await dan.page.reload();
   await dan.page.waitForSelector('.reveal-list li');
@@ -226,12 +274,19 @@ try {
   // 8. Privacy page
   await desk.page.goto(BASE + '/privacy');
   await desk.page.waitForSelector('h1');
+  const lost = await person('lost-visitor', PHONE);
+  const nf = await lost.page.goto(BASE + '/no-such-page');
+  assert.equal(nf.status(), 404, 'unknown path should be a 404');
+  await lost.page.waitForSelector('text=This page doesn\'t exist');
+  await shot(lost.page, 'phone-404');
 
   // 9. Undo + redraw: a match revealed in the old draw is hidden again in the new one
   step = 'redraw';
   await anna.page.click('#undoDraw');
+  await ok(anna.page);
   await anna.page.waitForSelector('#drawBtn');
   await anna.page.click('#drawBtn');
+  await ok(anna.page);
   await anna.page.waitForSelector('#undoDraw');
   await cleo.page.reload();
   await cleo.page.waitForSelector('#showMatch');
@@ -241,9 +296,11 @@ try {
   // 10. Organiser deletes the exchange (also cleans up test data on production)
   step = 'delete';
   await anna.page.click('#undoDraw');
+  await ok(anna.page);
   await anna.page.waitForSelector('#drawBtn');
   await anna.page.click('text=Edit details');
   await anna.page.click('#deleteEx');
+  await ok(anna.page);
   await anna.page.waitForURL(BASE + '/');
   const gone = await fetch(BASE + '/api/exchanges/' + groupUrl.split('/g/')[1]);
   assert.equal(gone.status, 404);
@@ -251,7 +308,7 @@ try {
   step = 'console';
   // Ignore nothing: any console error fails the run
   assert.deepEqual(errors, [], 'console errors:\n' + errors.join('\n'));
-  console.log('E2E PASS: form above fold, create, join x3, duplicate name, refresh keeps drafts + open panels, remove, exclusion, draw, reveal, wishlist, messages, personal link, organiser new link, reveal-all, undo + redraw hides match, delete, no console errors');
+  console.log('E2E PASS: in-page dialogs (cancel, Escape, confirm; no native dialogs), hostile + long names, fresh fields on refresh, 404 page, form above fold, create, join x3, duplicate name, refresh keeps drafts + open panels, remove, exclusion, draw, reveal, wishlist, messages, personal link, organiser new link, reveal-all, undo + redraw hides match, delete, no console errors');
 } catch (e) {
   console.error('E2E FAIL at step:', step);
   for (const c of browser.contexts()) for (const [i, pg] of c.pages().entries()) await pg.screenshot({ path: path.join(SHOTS, 'fail-' + browser.contexts().indexOf(c) + '-' + i + '.png'), fullPage: true }).catch(() => {});
